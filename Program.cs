@@ -3,10 +3,24 @@ using BenchmarkDotNet.Running;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Runtime.InteropServices;
+using System.Numerics;
+using System.Security.Cryptography;
 
 public class Program
 {
     public static void Main(string[] args) => BenchmarkRunner.Run<TradingBenchmarks>();
+    // public static void Main(string[] args) {
+    //     var tb = new TradingBenchmarks
+    //     {
+    //         Size = 15
+    //     };
+    //     tb.Setup();
+
+    //     Console.WriteLine("StandardSum: " + tb.StandardSum());
+    //     // Console.WriteLine("VectorizedSumPlainLogic: " + tb.VectorizedSumPlainLogic());
+    //     Console.WriteLine("VectorizedSumAvx: " + tb.VectorizedSumAvx());
+    //     Console.WriteLine("VectorDotProduct: " + tb.VectorDotProduct());
+    // }
 }
 
 [MemoryDiagnoser] // Tracks GC allocations
@@ -78,6 +92,31 @@ public class TradingBenchmarks
 
         float total = 0;
         for (int j = 0; j < 8; j++) total += vSum.GetElement(j);
+
+        // Clean up remaining elements
+        for (; i < span.Length; i++) total += span[i];
+
+        return total;
+    }
+
+    [Benchmark]
+    public float VectorDotProduct()
+    {
+        if (!Avx2.IsSupported) return StandardSum();
+
+        var vSum = Vector256<float>.Zero;
+        var span = _data.AsSpan();
+        int i = 0;
+
+        // Process 8 floats at a time using CPU registers
+        for (; i <= span.Length - 8; i += 8)
+        {
+            var vector = Vector256.Create(span.Slice(i, 8));
+            vSum = Avx2.Add(vSum, vector);
+        }
+
+        // Perform horizontal sum of the accumulated vector using dot product with ones
+        float total = Vector256.Dot(vSum, Vector256<float>.One);
 
         // Clean up remaining elements
         for (; i < span.Length; i++) total += span[i];
